@@ -47,7 +47,8 @@ from ._scalars import (
     _NumberLike_co,
 )
 from . import NBitBase
-from ._array_like import ArrayLike, _ArrayOrScalar
+from ._array_like import ArrayLike
+from ._generic_alias import NDArray
 
 if sys.version_info >= (3, 8):
     from typing import Protocol
@@ -168,7 +169,7 @@ if TYPE_CHECKING or HAVE_PROTOCOL:
         @overload
         def __call__(
             self, __other: Union[int, signedinteger[Any]]
-        ) -> Union[signedinteger[Any], float64]: ...
+        ) -> Any: ...
         @overload
         def __call__(self, __other: float) -> floating[Union[_NBit1, _NBitDouble]]: ...
         @overload
@@ -198,7 +199,7 @@ if TYPE_CHECKING or HAVE_PROTOCOL:
         @overload
         def __call__(
             self, __other: Union[int, signedinteger[Any]]
-        ) -> Union[signedinteger[Any], float64]: ...
+        ) -> Any: ...
         @overload
         def __call__(self, __other: float) -> floating[Union[_NBit1, _NBitDouble]]: ...
         @overload
@@ -212,7 +213,7 @@ if TYPE_CHECKING or HAVE_PROTOCOL:
         @overload
         def __call__(
             self, __other: Union[int, signedinteger[Any]]
-        ) -> Union[_2Tuple[signedinteger[Any]], _2Tuple[float64]]: ...
+        ) -> _2Tuple[Any]: ...
         @overload
         def __call__(self, __other: float) -> _2Tuple[floating[Union[_NBit1, _NBitDouble]]]: ...
         @overload
@@ -336,7 +337,7 @@ if TYPE_CHECKING or HAVE_PROTOCOL:
         @overload
         def __call__(self, __other: _T1) -> bool_: ...
         @overload
-        def __call__(self, __other: _T2) -> _ArrayOrScalar[bool_]: ...
+        def __call__(self, __other: _T2) -> NDArray[bool_]: ...
 
 else:
     _BoolOp = Any

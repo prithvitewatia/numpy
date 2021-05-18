@@ -176,8 +176,8 @@ cdef class Generator:
     Examples
     --------
     >>> from numpy.random import Generator, PCG64
-    >>> rg = Generator(PCG64())
-    >>> rg.standard_normal()
+    >>> rng = Generator(PCG64())
+    >>> rng.standard_normal()
     -0.203  # random
 
     See Also
@@ -614,11 +614,12 @@ cdef class Generator:
             len(size)``. Default is None, in which case a single value is
             returned.
         replace : bool, optional
-            Whether the sample is with or without replacement
+            Whether the sample is with or without replacement. Default is True,
+            meaning that a value of ``a`` can be selected multiple times.
         p : 1-D array_like, optional
             The probabilities associated with each entry in a.
-            If not given the sample assumes a uniform distribution over all
-            entries in a.
+            If not given, the sample assumes a uniform distribution over all
+            entries in ``a``.
         axis : int, optional
             The axis along which the selection is performed. The default, 0,
             selects by row.
@@ -997,8 +998,8 @@ cdef class Generator:
         -----
         For random samples from :math:`N(\\mu, \\sigma^2)`, use one of::
 
-            mu + sigma * gen.standard_normal(size=...)
-            gen.normal(mu, sigma, size=...)
+            mu + sigma * rng.standard_normal(size=...)
+            rng.normal(mu, sigma, size=...)
 
         Examples
         --------
@@ -1745,7 +1746,7 @@ cdef class Generator:
         either positive or negative, hence making our test 2-tailed. 
 
         Because we are estimating the mean and we have N=11 values in our sample,
-        we have N-1=10 degrees of freedom. We set our signifance level to 95% and 
+        we have N-1=10 degrees of freedom. We set our significance level to 95% and 
         compute the t statistic using the empirical mean and empirical standard 
         deviation of our intake. We use a ddof of 1 to base the computation of our 
         empirical standard deviation on an unbiased estimate of the variance (note:
@@ -4471,9 +4472,9 @@ cdef class Generator:
                     if i == j:
                         # i == j is not needed and memcpy is undefined.
                         continue
-                    buf[...] = x[j]
-                    x[j] = x[i]
-                    x[i] = buf
+                    buf[...] = x[j, ...]
+                    x[j, ...] = x[i, ...]
+                    x[i, ...] = buf
         else:
             # Untyped path.
             if not isinstance(x, Sequence):
@@ -4592,7 +4593,7 @@ def default_rng(seed=None):
     
     Examples
     --------
-    ``default_rng`` is the reccomended constructor for the random number class
+    ``default_rng`` is the recommended constructor for the random number class
     ``Generator``. Here are several ways we can construct a random 
     number generator using ``default_rng`` and the ``Generator`` class. 
     

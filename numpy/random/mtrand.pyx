@@ -79,6 +79,7 @@ cdef extern from "include/legacy-distributions.h":
     double legacy_gamma(aug_bitgen_t *aug_state, double shape, double scale) nogil
     double legacy_power(aug_bitgen_t *aug_state, double a) nogil
     double legacy_chisquare(aug_bitgen_t *aug_state, double df) nogil
+    double legacy_rayleigh(aug_bitgen_t *aug_state, double mode) nogil
     double legacy_noncentral_chisquare(aug_bitgen_t *aug_state, double df,
                                     double nonc) nogil
     double legacy_noncentral_f(aug_bitgen_t *aug_state, double dfnum, double dfden,
@@ -89,7 +90,7 @@ cdef extern from "include/legacy-distributions.h":
                                    int64_t n, binomial_t *binomial) nogil
     int64_t legacy_negative_binomial(aug_bitgen_t *aug_state, double n, double p) nogil
     int64_t legacy_random_hypergeometric(bitgen_t *bitgen_state, int64_t good, int64_t bad, int64_t sample) nogil
-    int64_t legacy_random_logseries(bitgen_t *bitgen_state, double p) nogil
+    int64_t legacy_logseries(bitgen_t *bitgen_state, double p) nogil
     int64_t legacy_random_poisson(bitgen_t *bitgen_state, double lam) nogil
     int64_t legacy_random_zipf(bitgen_t *bitgen_state, double a) nogil
     int64_t legacy_random_geometric(bitgen_t *bitgen_state, double p) nogil
@@ -819,17 +820,18 @@ cdef class RandomState:
         ----------
         a : 1-D array-like or int
             If an ndarray, a random sample is generated from its elements.
-            If an int, the random sample is generated as if a were np.arange(a)
+            If an int, the random sample is generated as if it were ``np.arange(a)``
         size : int or tuple of ints, optional
             Output shape.  If the given shape is, e.g., ``(m, n, k)``, then
             ``m * n * k`` samples are drawn.  Default is None, in which case a
             single value is returned.
         replace : boolean, optional
-            Whether the sample is with or without replacement
+            Whether the sample is with or without replacement. Default is True,
+            meaning that a value of ``a`` can be selected multiple times.
         p : 1-D array-like, optional
             The probabilities associated with each entry in a.
-            If not given the sample assumes a uniform distribution over all
-            entries in a.
+            If not given, the sample assumes a uniform distribution over all
+            entries in ``a``.
 
         Returns
         -------
@@ -2156,7 +2158,7 @@ cdef class RandomState:
         either positive or negative, hence making our test 2-tailed. 
 
         Because we are estimating the mean and we have N=11 values in our sample,
-        we have N-1=10 degrees of freedom. We set our signifance level to 95% and 
+        we have N-1=10 degrees of freedom. We set our significance level to 95% and 
         compute the t statistic using the empirical mean and empirical standard 
         deviation of our intake. We use a ddof of 1 to base the computation of our 
         empirical standard deviation on an unbiased estimate of the variance (note:
@@ -3086,7 +3088,7 @@ cdef class RandomState:
         0.087300000000000003 # random
 
         """
-        return cont(&random_rayleigh, &self._bitgen, size, self.lock, 1,
+        return cont(&legacy_rayleigh, &self._bitgen, size, self.lock, 1,
                     scale, 'scale', CONS_NON_NEGATIVE,
                     0.0, '', CONS_NONE,
                     0.0, '', CONS_NONE, None)
@@ -3954,7 +3956,7 @@ cdef class RandomState:
         >>> plt.show()
 
         """
-        out = disc(&legacy_random_logseries, &self._bitgen, size, self.lock, 1, 0,
+        out = disc(&legacy_logseries, &self._bitgen, size, self.lock, 1, 0,
                    p, 'p', CONS_BOUNDED_0_1,
                    0.0, '', CONS_NONE,
                    0.0, '', CONS_NONE)
@@ -4491,6 +4493,17 @@ cdef class RandomState:
             if x.size == 0:
                 # shuffling is a no-op
                 return
+
+            if x.ndim == 1 and x.dtype.type is np.object_:
+                warnings.warn(
+                        "Shuffling a one dimensional array subclass containing "
+                        "objects gives incorrect results for most array "
+                        "subclasses.  "
+                        "Please us the new random number API instead: "
+                        "https://numpy.org/doc/stable/reference/random/index.html\n"
+                        "The new API fixes this issue. This version will not "
+                        "be fixed due to stability guarantees of the API.",
+                        UserWarning, stacklevel=1)  # Cython adds no stacklevel
 
             buf = np.empty_like(x[0, ...])
             with self.lock:

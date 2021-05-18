@@ -593,7 +593,7 @@ def piecewise(x, condlist, funclist, *args, **kw):
             not isinstance(condlist[0], (list, ndarray)) and x.ndim != 0):
         condlist = [condlist]
 
-    condlist = array(condlist, dtype=bool)
+    condlist = asarray(condlist, dtype=bool)
     n = len(condlist)
 
     if n == n2 - 1:  # compute the "otherwise" condition.
@@ -671,11 +671,22 @@ def select(condlist, choicelist, default=0):
         raise ValueError("select with an empty condition list is not possible")
 
     choicelist = [np.asarray(choice) for choice in choicelist]
-    choicelist.append(np.asarray(default))
+
+    try:
+        intermediate_dtype = np.result_type(*choicelist)
+    except TypeError as e:
+        msg = f'Choicelist elements do not have a common dtype: {e}'
+        raise TypeError(msg) from None
+    default_array = np.asarray(default)
+    choicelist.append(default_array)
 
     # need to get the result type before broadcasting for correct scalar
     # behaviour
-    dtype = np.result_type(*choicelist)
+    try:
+        dtype = np.result_type(intermediate_dtype, default_array)
+    except TypeError as e:
+        msg = f'Choicelists and default value do not have a common dtype: {e}'
+        raise TypeError(msg) from None
 
     # Convert conditions to arrays and broadcast conditions and choices
     # as the shape is needed for the result. Doing it separately optimizes
@@ -2191,15 +2202,14 @@ class vectorize:
             ufunc, otypes = self._get_ufunc_and_otypes(func=func, args=args)
 
             # Convert args to object arrays first
-            inputs = [array(a, copy=False, subok=True, dtype=object)
-                      for a in args]
+            inputs = [asanyarray(a, dtype=object) for a in args]
 
             outputs = ufunc(*inputs)
 
             if ufunc.nout == 1:
-                res = array(outputs, copy=False, subok=True, dtype=otypes[0])
+                res = asanyarray(outputs, dtype=otypes[0])
             else:
-                res = tuple([array(x, copy=False, subok=True, dtype=t)
+                res = tuple([asanyarray(x, dtype=t)
                              for x, t in zip(outputs, otypes)])
         return res
 
@@ -3947,11 +3957,10 @@ def _quantile_is_valid(q):
     # avoid expensive reductions, relevant for arrays with < O(1000) elements
     if q.ndim == 1 and q.size < 10:
         for i in range(q.size):
-            if q[i] < 0.0 or q[i] > 1.0:
+            if not (0.0 <= q[i] <= 1.0):
                 return False
     else:
-        # faster than any()
-        if np.count_nonzero(q < 0.0) or np.count_nonzero(q > 1.0):
+        if not (np.all(0 <= q) and np.all(q <= 1)):
             return False
     return True
 
@@ -4277,7 +4286,8 @@ def meshgrid(*xi, copy=True, sparse=False, indexing='xy'):
     >>> y = np.arange(-5, 5, 0.1)
     >>> xx, yy = np.meshgrid(x, y, sparse=True)
     >>> z = np.sin(xx**2 + yy**2) / (xx**2 + yy**2)
-    >>> h = plt.contourf(x,y,z)
+    >>> h = plt.contourf(x, y, z)
+    >>> plt.axis('scaled')
     >>> plt.show()
 
     """

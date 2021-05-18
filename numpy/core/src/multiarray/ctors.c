@@ -665,8 +665,14 @@ PyArray_NewFromDescr_int(
         int allow_emptystring)
 {
     PyArrayObject_fields *fa;
-    int i;
     npy_intp nbytes;
+
+    if (nd > NPY_MAXDIMS || nd < 0) {
+        PyErr_Format(PyExc_ValueError,
+                "number of dimensions must be within [0, %d]", NPY_MAXDIMS);
+        Py_DECREF(descr);
+        return NULL;
+    }
 
     if (descr->subarray) {
         PyObject *ret;
@@ -685,14 +691,6 @@ PyArray_NewFromDescr_int(
                 flags, obj, base,
                 zeroed, allow_emptystring);
         return ret;
-    }
-
-    if ((unsigned int)nd > (unsigned int)NPY_MAXDIMS) {
-        PyErr_Format(PyExc_ValueError,
-                     "number of dimensions must be within [0, %d]",
-                     NPY_MAXDIMS);
-        Py_DECREF(descr);
-        return NULL;
     }
 
     /* Check datatype element size */
@@ -715,39 +713,6 @@ PyArray_NewFromDescr_int(
             else {
                 nbytes = descr->elsize = sizeof(npy_ucs4);
             }
-        }
-    }
-
-    /* Check dimensions and multiply them to nbytes */
-    for (i = 0; i < nd; i++) {
-        npy_intp dim = dims[i];
-
-        if (dim == 0) {
-            /*
-             * Compare to PyArray_OverflowMultiplyList that
-             * returns 0 in this case.
-             */
-            continue;
-        }
-
-        if (dim < 0) {
-            PyErr_SetString(PyExc_ValueError,
-                "negative dimensions are not allowed");
-            Py_DECREF(descr);
-            return NULL;
-        }
-
-        /*
-         * Care needs to be taken to avoid integer overflow when
-         * multiplying the dimensions together to get the total size of the
-         * array.
-         */
-        if (npy_mul_with_overflow_intp(&nbytes, nbytes, dim)) {
-            PyErr_SetString(PyExc_ValueError,
-                "array is too big; `arr.size * arr.dtype.itemsize` "
-                "is larger than the maximum possible size.");
-            Py_DECREF(descr);
-            return NULL;
         }
     }
 
@@ -786,26 +751,57 @@ PyArray_NewFromDescr_int(
             goto fail;
         }
         fa->strides = fa->dimensions + nd;
-        if (nd) {
-            memcpy(fa->dimensions, dims, sizeof(npy_intp)*nd);
+
+        /* Copy dimensions, check them, and find total array size `nbytes` */
+        for (int i = 0; i < nd; i++) {
+            fa->dimensions[i] = dims[i];
+
+            if (fa->dimensions[i] == 0) {
+                /*
+                 * Compare to PyArray_OverflowMultiplyList that
+                 * returns 0 in this case.
+                 */
+                continue;
+            }
+
+            if (fa->dimensions[i] < 0) {
+                PyErr_SetString(PyExc_ValueError,
+                        "negative dimensions are not allowed");
+                goto fail;
+            }
+
+            /*
+             * Care needs to be taken to avoid integer overflow when multiplying
+             * the dimensions together to get the total size of the array.
+             */
+            if (npy_mul_with_overflow_intp(&nbytes, nbytes, fa->dimensions[i])) {
+                PyErr_SetString(PyExc_ValueError,
+                        "array is too big; `arr.size * arr.dtype.itemsize` "
+                        "is larger than the maximum possible size.");
+                goto fail;
+            }
         }
-        if (strides == NULL) {  /* fill it in */
+
+        /* Fill the strides (or copy them if they were passed in) */
+        if (strides == NULL) {
+            /* fill the strides and set the contiguity flags */
             _array_fill_strides(fa->strides, dims, nd, descr->elsize,
                                 flags, &(fa->flags));
         }
         else {
-            /*
-             * we allow strides even when we create
-             * the memory, but be careful with this...
-             */
-            if (nd) {
-                memcpy(fa->strides, strides, sizeof(npy_intp)*nd);
+            /* User to provided strides (user is responsible for correctness) */
+            for (int i = 0; i < nd; i++) {
+                fa->strides[i] = strides[i];
             }
+            /* Since the strides were passed in must update contiguity */
+            PyArray_UpdateFlags((PyArrayObject *)fa,
+                    NPY_ARRAY_C_CONTIGUOUS|NPY_ARRAY_F_CONTIGUOUS);
         }
     }
     else {
-        fa->dimensions = fa->strides = NULL;
-        fa->flags |= NPY_ARRAY_F_CONTIGUOUS;
+        fa->dimensions = NULL;
+        fa->strides = NULL;
+        fa->flags |= NPY_ARRAY_C_CONTIGUOUS|NPY_ARRAY_F_CONTIGUOUS;
     }
 
     if (data == NULL) {
@@ -844,12 +840,11 @@ PyArray_NewFromDescr_int(
     fa->data = data;
 
     /*
-     * always update the flags to get the right CONTIGUOUS, ALIGN properties
-     * not owned data and input strides may not be aligned and on some
-     * platforms (debian sparc) malloc does not provide enough alignment for
-     * long double types
+     * Always update the aligned flag.  Not owned data or input strides may
+     * not be aligned. Also on some platforms (debian sparc) malloc does not
+     * provide enough alignment for long double types.
      */
-    PyArray_UpdateFlags((PyArrayObject *)fa, NPY_ARRAY_UPDATE_ALL);
+    PyArray_UpdateFlags((PyArrayObject *)fa, NPY_ARRAY_ALIGNED);
 
     /* Set the base object. It's important to do it here so that
      * __array_finalize__ below receives it
@@ -862,15 +857,20 @@ PyArray_NewFromDescr_int(
     }
 
     /*
-     * call the __array_finalize__
-     * method if a subtype.
-     * If obj is NULL, then call method with Py_None
+     * call the __array_finalize__ method if a subtype was requested.
+     * If obj is NULL use Py_None for the Python callback.
      */
-    if ((subtype != &PyArray_Type)) {
-        PyObject *res, *func, *args;
+    if (subtype != &PyArray_Type) {
+        PyObject *res, *func;
 
         func = PyObject_GetAttr((PyObject *)fa, npy_ma_str_array_finalize);
-        if (func && func != Py_None) {
+        if (func == NULL) {
+            goto fail;
+        }
+        else if (func == Py_None) {
+            Py_DECREF(func);
+        }
+        else {
             if (PyCapsule_CheckExact(func)) {
                 /* A C-function is stored here */
                 PyArray_FinalizeFunc *cfunc;
@@ -884,14 +884,10 @@ PyArray_NewFromDescr_int(
                 }
             }
             else {
-                args = PyTuple_New(1);
                 if (obj == NULL) {
-                    obj=Py_None;
+                    obj = Py_None;
                 }
-                Py_INCREF(obj);
-                PyTuple_SET_ITEM(args, 0, obj);
-                res = PyObject_Call(func, args, NULL);
-                Py_DECREF(args);
+                res = PyObject_CallFunctionObjArgs(func, obj, NULL);
                 Py_DECREF(func);
                 if (res == NULL) {
                     goto fail;
@@ -901,7 +897,6 @@ PyArray_NewFromDescr_int(
                 }
             }
         }
-        else Py_XDECREF(func);
     }
     return (PyObject *)fa;
 
@@ -2545,8 +2540,6 @@ PyArray_EnsureAnyArray(PyObject *op)
 NPY_NO_EXPORT int
 PyArray_CopyAsFlat(PyArrayObject *dst, PyArrayObject *src, NPY_ORDER order)
 {
-    PyArray_StridedUnaryOp *stransfer = NULL;
-    NpyAuxData *transferdata = NULL;
     NpyIter *dst_iter, *src_iter;
 
     NpyIter_IterNextFunc *dst_iternext, *src_iternext;
@@ -2555,9 +2548,7 @@ PyArray_CopyAsFlat(PyArrayObject *dst, PyArrayObject *src, NPY_ORDER order)
     npy_intp *dst_countptr, *src_countptr;
     npy_uint32 baseflags;
 
-    char *dst_data, *src_data;
     npy_intp dst_count, src_count, count;
-    npy_intp src_itemsize;
     npy_intp dst_size, src_size;
     int needs_api;
 
@@ -2629,7 +2620,6 @@ PyArray_CopyAsFlat(PyArrayObject *dst, PyArrayObject *src, NPY_ORDER order)
     /* Since buffering is disabled, we can cache the stride */
     src_stride = NpyIter_GetInnerStrideArray(src_iter)[0];
     src_countptr = NpyIter_GetInnerLoopSizePtr(src_iter);
-    src_itemsize = PyArray_DESCR(src)->elsize;
 
     if (dst_iternext == NULL || src_iternext == NULL) {
         NpyIter_Deallocate(dst_iter);
@@ -2646,14 +2636,14 @@ PyArray_CopyAsFlat(PyArrayObject *dst, PyArrayObject *src, NPY_ORDER order)
      * we can pass them to this function to take advantage of
      * contiguous strides, etc.
      */
+    NPY_cast_info cast_info;
     if (PyArray_GetDTypeTransferFunction(
                     IsUintAligned(src) && IsAligned(src) &&
                     IsUintAligned(dst) && IsAligned(dst),
                     src_stride, dst_stride,
                     PyArray_DESCR(src), PyArray_DESCR(dst),
                     0,
-                    &stransfer, &transferdata,
-                    &needs_api) != NPY_SUCCEED) {
+                    &cast_info, &needs_api) != NPY_SUCCEED) {
         NpyIter_Deallocate(dst_iter);
         NpyIter_Deallocate(src_iter);
         return -1;
@@ -2665,15 +2655,15 @@ PyArray_CopyAsFlat(PyArrayObject *dst, PyArrayObject *src, NPY_ORDER order)
 
     dst_count = *dst_countptr;
     src_count = *src_countptr;
-    dst_data = dst_dataptr[0];
-    src_data = src_dataptr[0];
+    char *args[2] = {src_dataptr[0], dst_dataptr[0]};
+    npy_intp strides[2] = {src_stride, dst_stride};
+
     int res = 0;
     for(;;) {
         /* Transfer the biggest amount that fits both */
         count = (src_count < dst_count) ? src_count : dst_count;
-        if (stransfer(
-                dst_data, dst_stride, src_data, src_stride,
-                count, src_itemsize, transferdata) < 0) {
+        if (cast_info.func(&cast_info.context,
+                args, &count, strides, cast_info.auxdata) < 0) {
             res = -1;
             break;
         }
@@ -2685,11 +2675,11 @@ PyArray_CopyAsFlat(PyArrayObject *dst, PyArrayObject *src, NPY_ORDER order)
                 break;
             }
             dst_count = *dst_countptr;
-            dst_data = dst_dataptr[0];
+            args[1] = dst_dataptr[0];
         }
         else {
             dst_count -= count;
-            dst_data += count*dst_stride;
+            args[1] += count*dst_stride;
         }
 
         /* If we exhausted the src block, refresh it */
@@ -2699,17 +2689,17 @@ PyArray_CopyAsFlat(PyArrayObject *dst, PyArrayObject *src, NPY_ORDER order)
                 break;
             }
             src_count = *src_countptr;
-            src_data = src_dataptr[0];
+            args[0] = src_dataptr[0];
         }
         else {
             src_count -= count;
-            src_data += count*src_stride;
+            args[0] += count*src_stride;
         }
     }
 
     NPY_END_THREADS;
 
-    NPY_AUXDATA_FREE(transferdata);
+    NPY_cast_info_xfree(&cast_info);
     NpyIter_Deallocate(dst_iter);
     NpyIter_Deallocate(src_iter);
     if (res > 0) {

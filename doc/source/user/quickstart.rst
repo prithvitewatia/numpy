@@ -1254,19 +1254,21 @@ set <https://en.wikipedia.org/wiki/Mandelbrot_set>`__:
 
     >>> import numpy as np
     >>> import matplotlib.pyplot as plt
-    >>> def mandelbrot(h, w, maxit=20):
+    >>> def mandelbrot(h, w, maxit=20, r=2):
     ...     """Returns an image of the Mandelbrot fractal of size (h,w)."""
-    ...     y, x = np.ogrid[-1.4:1.4:h*1j, -2:0.8:w*1j]
-    ...     c = x + y * 1j
-    ...     z = c
+    ...     x = np.linspace(-2.5, 1.5, 4*h+1)
+    ...     y = np.linspace(-1.5, 1.5, 3*w+1)
+    ...     A, B = np.meshgrid(x, y)
+    ...     C = A + B*1j
+    ...     z = np.zeros_like(C)
     ...     divtime = maxit + np.zeros(z.shape, dtype=int)
     ...
     ...     for i in range(maxit):
-    ...         z = z**2 + c
-    ...         diverge = z * np.conj(z) > 2**2       # who is diverging
+    ...         z = z**2 + C
+    ...         diverge = abs(z) > r                    # who is diverging
     ...         div_now = diverge & (divtime == maxit)  # who is diverging now
     ...         divtime[div_now] = i                    # note when
-    ...         z[diverge] = 2                          # avoid diverging too much
+    ...         z[diverge] = r                          # avoid diverging too much
     ...
     ...     return divtime
     >>> plt.imshow(mandelbrot(400, 400))
@@ -1464,10 +1466,12 @@ that ``pylab.hist`` plots the histogram automatically, while
     >>> mu, sigma = 2, 0.5
     >>> v = rg.normal(mu, sigma, 10000)
     >>> # Plot a normalized histogram with 50 bins
-    >>> plt.hist(v, bins=50, density=1)       # matplotlib version (plot)
+    >>> plt.hist(v, bins=50, density=True)       # matplotlib version (plot)
     >>> # Compute the histogram with numpy and then plot it
     >>> (n, bins) = np.histogram(v, bins=50, density=True)  # NumPy version (no plot)
     >>> plt.plot(.5 * (bins[1:] + bins[:-1]), n)
+
+With Matplotlib >=3.4 you can also use ``plt.stairs(n, bins)``.
 
 
 Further reading

@@ -57,7 +57,7 @@ PyArray_FindConcatenationDescriptor(
         npy_intp n, PyArrayObject **arrays, PyObject *requested_dtype);
 
 NPY_NO_EXPORT int
-PyArray_AddCastingImplmentation(PyBoundArrayMethodObject *meth);
+PyArray_AddCastingImplementation(PyBoundArrayMethodObject *meth);
 
 NPY_NO_EXPORT int
 PyArray_AddCastingImplementation_FromSpec(PyArrayMethod_Spec *spec, int private);
@@ -80,7 +80,7 @@ NPY_NO_EXPORT int
 legacy_cast_get_strided_loop(
         PyArrayMethod_Context *context,
         int aligned, int move_references, npy_intp *strides,
-        PyArray_StridedUnaryOp **out_loop, NpyAuxData **out_transferdata,
+        PyArrayMethod_StridedLoop **out_loop, NpyAuxData **out_transferdata,
         NPY_ARRAYMETHOD_FLAGS *flags);
 
 NPY_NO_EXPORT NPY_CASTING

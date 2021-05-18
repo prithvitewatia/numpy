@@ -698,6 +698,9 @@ class TestDeprecatedGlobals(_DeprecationTestCase):
         self.assert_deprecated(lambda: np.long(1))
         self.assert_deprecated(lambda: np.unicode('abc'))
 
+        # from np.core.numerictypes
+        self.assert_deprecated(lambda: np.typeDict)
+
 
 class TestMatrixInOuter(_DeprecationTestCase):
     # 2020-05-13 NumPy 1.20.0
@@ -1118,10 +1121,7 @@ class TestStringPromotion(_DeprecationTestCase):
         self.assert_deprecated(lambda: np.concatenate((arr1, arr2), axis=0))
         self.assert_deprecated(lambda: np.concatenate((arr1, arr2), axis=None))
 
-        # coercing to an array is similar, but will fall-back to `object`
-        # (when raising the FutureWarning, this already happens)
-        self.assert_deprecated(lambda: np.array([arr1[0], arr2[0]]),
-                               exceptions=())
+        self.assert_deprecated(lambda: np.array([arr1[0], arr2[0]]))
 
     @pytest.mark.parametrize("dtype", "?bhilqpBHILQPefdgFDG")
     @pytest.mark.parametrize("string_dt", ["S", "U"])
@@ -1138,3 +1138,37 @@ class TestStringPromotion(_DeprecationTestCase):
         # np.equal uses a different type resolver:
         with pytest.raises(TypeError):
             self.assert_not_deprecated(lambda: np.equal(arr1, arr2))
+
+
+class TestSingleElementSignature(_DeprecationTestCase):
+    # Deprecated 2021-04-01, NumPy 1.21
+    message = r"The use of a length 1"
+
+    def test_deprecated(self):
+        self.assert_deprecated(lambda: np.add(1, 2, signature="d"))
+        self.assert_deprecated(lambda: np.add(1, 2, sig=(np.dtype("l"),)))
+
+
+class TestComparisonBadDType(_DeprecationTestCase):
+    # Deprecated 2021-04-01, NumPy 1.21
+    message = r"using `dtype=` in comparisons is only useful for"
+
+    def test_deprecated(self):
+        self.assert_deprecated(lambda: np.equal(1, 1, dtype=np.int64))
+        # Not an error only for the transition
+        self.assert_deprecated(lambda: np.equal(1, 1, sig=(None, None, "l")))
+
+    def test_not_deprecated(self):
+        np.equal(True, False, dtype=bool)
+        np.equal(3, 5, dtype=bool, casting="unsafe")
+        np.equal([None], [4], dtype=object)
+
+class TestComparisonBadObjectDType(_DeprecationTestCase):
+    # Deprecated 2021-04-01, NumPy 1.21  (different branch of the above one)
+    message = r"using `dtype=object` \(or equivalent signature\) will"
+    warning_cls = FutureWarning
+
+    def test_deprecated(self):
+        self.assert_deprecated(lambda: np.equal(1, 1, dtype=object))
+        self.assert_deprecated(
+                lambda: np.equal(1, 1, sig=(None, None, object)))

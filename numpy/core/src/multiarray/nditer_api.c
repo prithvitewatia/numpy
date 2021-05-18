@@ -1760,6 +1760,9 @@ npyiter_allocate_buffers(NpyIter *iter, char **errmsg)
                 }
                 goto fail;
             }
+            if (PyDataType_FLAGCHK(op_dtype[iop], NPY_NEEDS_INIT)) {
+                memset(buffer, '\0', itemsize*buffersize);
+            }
             buffers[iop] = buffer;
         }
     }
@@ -2009,8 +2012,7 @@ npyiter_copy_from_buffers(NpyIter *iter)
                         dst_coords, axisdata_incr,
                         dst_shape, axisdata_incr,
                         op_transfersize, dtypes[iop]->elsize,
-                        (PyArray_MaskedStridedUnaryOp *)transferinfo[iop].write.func,
-                        transferinfo[iop].write.auxdata) < 0) {
+                        &transferinfo[iop].write) < 0) {
                     return -1;
                 }
             }
@@ -2022,15 +2024,14 @@ npyiter_copy_from_buffers(NpyIter *iter)
                         dst_coords, axisdata_incr,
                         dst_shape, axisdata_incr,
                         op_transfersize, dtypes[iop]->elsize,
-                        transferinfo[iop].write.func,
-                        transferinfo[iop].write.auxdata) < 0) {
+                        &transferinfo[iop].write) < 0) {
                     return -1;
                 }
             }
         }
         /* If there's no copy back, we may have to decrement refs.  In
-         * this case, the transfer function has a 'decsrcref' transfer
-         * function, so we can use it to do the decrement.
+         * this case, the transfer is instead a function which clears
+         * (DECREFs) the single input.
          *
          * The flag USINGBUFFER is set when the buffer was used, so
          * only decrement refs when this flag is on.
@@ -2040,9 +2041,10 @@ npyiter_copy_from_buffers(NpyIter *iter)
             NPY_IT_DBG_PRINT1("Iterator: Freeing refs and zeroing buffer "
                                 "of operand %d\n", (int)iop);
             /* Decrement refs */
+            npy_intp buf_stride = dtypes[iop]->elsize;
             if (transferinfo[iop].write.func(
-                    NULL, 0, buffer, dtypes[iop]->elsize,
-                    transfersize, dtypes[iop]->elsize,
+                    &transferinfo[iop].write.context,
+                    &buffer, &transfersize, &buf_stride,
                     transferinfo[iop].write.auxdata) < 0) {
                 /* Since this should only decrement, it should never error */
                 assert(0);
@@ -2530,16 +2532,18 @@ npyiter_copy_to_buffers(NpyIter *iter, char **prev_dataptrs)
                 skip_transfer = 1;
             }
 
-            /* If the data type requires zero-inititialization */
-            if (PyDataType_FLAGCHK(dtypes[iop], NPY_NEEDS_INIT)) {
-                NPY_IT_DBG_PRINT("Iterator: Buffer requires init, "
-                                    "memsetting to 0\n");
-                memset(ptrs[iop], 0, dtypes[iop]->elsize*op_transfersize);
-                /* Can't skip the transfer in this case */
-                skip_transfer = 0;
-            }
-
-            if (!skip_transfer) {
+            /*
+             * Copy data to the buffers if necessary.
+             *
+             * We always copy if the operand has references. In that case
+             * a "write" function must be in use that either copies or clears
+             * the buffer.
+             * This write from buffer call does not check for skip-transfer
+             * so we have to assume the buffer is cleared.  For dtypes that
+             * do not have references, we can assume that the write function
+             * will leave the source (buffer) unmodified.
+             */
+            if (!skip_transfer || PyDataType_REFCHK(dtypes[iop])) {
                 NPY_IT_DBG_PRINT2("Iterator: Copying operand %d to "
                                 "buffer (%d items)\n",
                                 (int)iop, (int)op_transfersize);
@@ -2550,22 +2554,11 @@ npyiter_copy_to_buffers(NpyIter *iter, char **prev_dataptrs)
                         src_coords, axisdata_incr,
                         src_shape, axisdata_incr,
                         op_transfersize, src_itemsize,
-                        transferinfo[iop].read.func,
-                        transferinfo[iop].read.auxdata) < 0) {
+                        &transferinfo[iop].read) < 0) {
                     return -1;
                 }
             }
         }
-        else if (ptrs[iop] == buffers[iop]) {
-            /* If the data type requires zero-inititialization */
-            if (PyDataType_FLAGCHK(dtypes[iop], NPY_NEEDS_INIT)) {
-                NPY_IT_DBG_PRINT1("Iterator: Write-only buffer for "
-                                    "operand %d requires init, "
-                                    "memsetting to 0\n", (int)iop);
-                memset(ptrs[iop], 0, dtypes[iop]->elsize*transfersize);
-            }
-        }
-
     }
 
     /*

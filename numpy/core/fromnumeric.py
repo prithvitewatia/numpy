@@ -10,8 +10,7 @@ from . import multiarray as mu
 from . import overrides
 from . import umath as um
 from . import numerictypes as nt
-from ._asarray import asarray, array, asanyarray
-from .multiarray import concatenate
+from .multiarray import asarray, array, asanyarray, concatenate
 from . import _methods
 
 _dt_ = nt.sctype2char
@@ -2087,14 +2086,24 @@ def clip(a, a_min, a_max, out=None, **kwargs):
     --------
     :ref:`ufuncs-output-type`
 
+    Notes
+    -----
+    When `a_min` is greater than `a_max`, `clip` returns an 
+    array in which all values are equal to `a_max`, 
+    as shown in the second example.  
+
     Examples
     --------
     >>> a = np.arange(10)
-    >>> np.clip(a, 1, 8)
-    array([1, 1, 2, 3, 4, 5, 6, 7, 8, 8])
     >>> a
     array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
+    >>> np.clip(a, 1, 8)
+    array([1, 1, 2, 3, 4, 5, 6, 7, 8, 8])
+    >>> np.clip(a, 8, 1)
+    array([1, 1, 1, 1, 1, 1, 1, 1, 1, 1])
     >>> np.clip(a, 3, 6, out=a)
+    array([3, 3, 3, 3, 4, 5, 6, 6, 6, 6])
+    >>> a
     array([3, 3, 3, 3, 4, 5, 6, 6, 6, 6])
     >>> a = np.arange(10)
     >>> a
@@ -2489,6 +2498,10 @@ def cumsum(a, axis=None, dtype=None, out=None):
     Arithmetic is modular when using integer types, and no error is
     raised on overflow.
 
+    ``cumsum(a)[-1]`` may not be equal to ``sum(a)`` for floating-point
+    values since ``sum`` may use a pairwise summation routine, reducing
+    the roundoff-error. See `sum` for more information.
+
     Examples
     --------
     >>> a = np.array([[1,2,3], [4,5,6]])
@@ -2506,6 +2519,14 @@ def cumsum(a, axis=None, dtype=None, out=None):
     >>> np.cumsum(a,axis=1)      # sum over columns for each of the 2 rows
     array([[ 1,  3,  6],
            [ 4,  9, 15]])
+
+    ``cumsum(b)[-1]`` may not be equal to ``sum(b)``
+
+    >>> b = np.array([1, 2e-9, 3e-9] * 1000000)
+    >>> b.cumsum()[-1]
+    1000000.0050045159
+    >>> b.sum()                    
+    1000000.0050000029
 
     """
     return _wrapfunc(a, 'cumsum', axis=axis, dtype=dtype, out=out)

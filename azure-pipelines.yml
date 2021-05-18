@@ -31,7 +31,8 @@ stages:
     - script: >-
         python -m pip install -r linter_requirements.txt
       displayName: 'Install tools'
-      failOnStderr: true
+      # pip 21.1 emits a pile of garbage messages to annoy users :)
+      #      failOnStderr: true
     - script: |
         python tools/linter.py --branch origin/$(System.PullRequest.TargetBranch)
       displayName: 'Run Lint Checks'
@@ -207,7 +208,7 @@ stages:
     - script: python -m pip install matplotlib
       displayName: 'Install matplotlib before refguide run'
     - script: python runtests.py -g --refguide-check
-      displayName: 'Run Refuide Check'
+      displayName: 'Run Refguide Check'
       condition: eq(variables['USE_OPENBLAS'], '1')
     - script: python runtests.py -n --mode=full -- -rsx --junitxml=junit/test-results.xml
       displayName: 'Run Full NumPy Test Suite'
@@ -284,6 +285,7 @@ stages:
       vmImage: 'ubuntu-18.04'
     steps:
     - script: |
+            sudo apt update
             sudo apt install python3.7
             sudo apt install python3.7-dev
             if ! `gcc-4.8 2>/dev/null`; then

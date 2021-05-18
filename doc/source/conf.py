@@ -99,7 +99,7 @@ master_doc = 'index'
 
 # General substitutions.
 project = 'NumPy'
-copyright = '2008-2021, The SciPy community'
+copyright = '2008-2021, The NumPy community'
 
 # The default replacements for |version| and |release|, also used in various
 # other places throughout the built documents.
@@ -160,7 +160,10 @@ html_theme = 'pydata_sphinx_theme'
 
 html_logo = '_static/numpylogo.svg'
 
+html_favicon = '_static/favicon/favicon.ico'
+
 html_theme_options = {
+  "logo_link": "index",
   "github_url": "https://github.com/numpy/numpy",
   "twitter_url": "https://twitter.com/numpy_team",
 }
@@ -291,6 +294,7 @@ intersphinx_mapping = {
     'skimage': ('https://scikit-image.org/docs/stable', None),
     'pandas': ('https://pandas.pydata.org/pandas-docs/stable', None),
     'scipy-lecture-notes': ('https://scipy-lectures.org', None),
+    'pytest': ('https://docs.pytest.org/en/stable', None),
 }
 
 
