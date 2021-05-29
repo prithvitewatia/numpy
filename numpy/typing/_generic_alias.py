@@ -63,7 +63,8 @@ def _reconstruct_alias(alias: _T, parameters: Iterator[TypeVar]) -> _T:
         elif isinstance(i, _GenericAlias):
             value = _reconstruct_alias(i, parameters)
         elif hasattr(i, "__parameters__"):
-            value = i[next(parameters)]
+            prm_tup = tuple(next(parameters) for _ in i.__parameters__)
+            value = i[prm_tup]
         else:
             value = i
         args.append(value)
@@ -195,9 +196,10 @@ if sys.version_info >= (3, 9):
 else:
     _GENERIC_ALIAS_TYPE = (_GenericAlias,)
 
-ScalarType = TypeVar("ScalarType", bound=np.generic)
+ScalarType = TypeVar("ScalarType", bound=np.generic, covariant=True)
 
 if TYPE_CHECKING:
+    _DType = np.dtype[ScalarType]
     NDArray = np.ndarray[Any, np.dtype[ScalarType]]
 elif sys.version_info >= (3, 9):
     _DType = types.GenericAlias(np.dtype, (ScalarType,))
